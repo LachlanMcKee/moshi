@@ -23,6 +23,7 @@ import java.util.List;
  */
 public final class DataMappingMismatchLog {
   private List<UnknownEnum> unknownEnums;
+  private List<RemovedListElement> removedListElements;
 
   public DataMappingMismatchLog() {
   }
@@ -32,6 +33,13 @@ public final class DataMappingMismatchLog {
     if (existingUnknownEnums != null) {
       for (UnknownEnum unknownEnum : existingUnknownEnums) {
         addUnknownEnum(new UnknownEnum(unknownEnum.path, unknownEnum.name));
+      }
+    }
+    List<RemovedListElement> removedListElements = copyFrom.getRemovedListElements();
+    if (removedListElements != null) {
+      for (RemovedListElement removedListElement : removedListElements) {
+        addRemovedListElement(new RemovedListElement(
+          removedListElement.path, removedListElement.exception));
       }
     }
   }
@@ -47,10 +55,27 @@ public final class DataMappingMismatchLog {
   }
 
   /**
+   * Track a removed list element due to a failure during deserialization.
+   */
+  public void addRemovedListElement(RemovedListElement removedListElement) {
+    if (removedListElements == null) {
+      removedListElements = new ArrayList<>();
+    }
+    removedListElements.add(removedListElement);
+  }
+
+  /**
    * Returns a list of any enum data mismatch events that occurred during deserialization.
    */
   public List<UnknownEnum> getUnknownEnums() {
     return unknownEnums;
+  }
+
+  /**
+   * Returns a list of any list elements that failed during deserialization.
+   */
+  public List<RemovedListElement> getRemovedListElements() {
+    return removedListElements;
   }
 
   /**
@@ -63,6 +88,19 @@ public final class DataMappingMismatchLog {
     public UnknownEnum(String path, String name) {
       this.path = path;
       this.name = name;
+    }
+  }
+
+  /**
+   * Metadata associated with an list element that failed during deserialization.
+   */
+  public static final class RemovedListElement {
+    public final String path;
+    public final Exception exception;
+
+    public RemovedListElement(String path, Exception exception) {
+      this.path = path;
+      this.exception = exception;
     }
   }
 }

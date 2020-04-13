@@ -33,36 +33,52 @@ abstract class CollectionJsonAdapter<C extends Collection<T>, T> extends JsonAda
       Class<?> rawType = Types.getRawType(type);
       if (!annotations.isEmpty()) return null;
       if (rawType == List.class || rawType == Collection.class) {
-        return newArrayListAdapter(type, moshi).nullSafe();
+        return newArrayListAdapter(type, moshi, false).nullSafe();
+      } else if (rawType == MoshiSafeList.class) {
+        return newArrayListAdapter(type, moshi, true).nullSafe();
       } else if (rawType == Set.class) {
-        return newLinkedHashSetAdapter(type, moshi).nullSafe();
+        return newLinkedHashSetAdapter(type, moshi, false).nullSafe();
+      } else if (rawType == MoshiSafeSet.class) {
+        return newLinkedHashSetAdapter(type, moshi, true).nullSafe();
       }
       return null;
     }
   };
 
   private final JsonAdapter<T> elementAdapter;
+  private final boolean filterErrors;
 
-  private CollectionJsonAdapter(JsonAdapter<T> elementAdapter) {
+  private CollectionJsonAdapter(JsonAdapter<T> elementAdapter, boolean filterErrors) {
     this.elementAdapter = elementAdapter;
+    this.filterErrors = filterErrors;
   }
 
-  static <T> JsonAdapter<Collection<T>> newArrayListAdapter(Type type, Moshi moshi) {
+  static <T> JsonAdapter<Collection<T>> newArrayListAdapter(
+      Type type, Moshi moshi, final boolean filterErrors) {
     Type elementType = Types.collectionElementType(type, Collection.class);
     JsonAdapter<T> elementAdapter = moshi.adapter(elementType);
-    return new CollectionJsonAdapter<Collection<T>, T>(elementAdapter) {
+    return new CollectionJsonAdapter<Collection<T>, T>(elementAdapter, filterErrors) {
       @Override Collection<T> newCollection() {
-        return new ArrayList<>();
+        if (filterErrors) {
+          return new MoshiSafeList.Impl<>();
+        } else {
+          return new ArrayList<>();
+        }
       }
     };
   }
 
-  static <T> JsonAdapter<Set<T>> newLinkedHashSetAdapter(Type type, Moshi moshi) {
+  static <T> JsonAdapter<Set<T>> newLinkedHashSetAdapter(
+      Type type, Moshi moshi, final boolean filterErrors) {
     Type elementType = Types.collectionElementType(type, Collection.class);
     JsonAdapter<T> elementAdapter = moshi.adapter(elementType);
-    return new CollectionJsonAdapter<Set<T>, T>(elementAdapter) {
+    return new CollectionJsonAdapter<Set<T>, T>(elementAdapter, filterErrors) {
       @Override Set<T> newCollection() {
-        return new LinkedHashSet<>();
+        if (filterErrors) {
+          return new MoshiSafeSet.Impl<>();
+        } else {
+          return new LinkedHashSet<>();
+        }
       }
     };
   }
@@ -71,11 +87,25 @@ abstract class CollectionJsonAdapter<C extends Collection<T>, T> extends JsonAda
 
   @Override public C fromJson(JsonReader reader) throws IOException {
     C result = newCollection();
-    reader.beginArray();
-    while (reader.hasNext()) {
-      result.add(elementAdapter.fromJson(reader));
+
+    if (filterErrors) {
+      List<Object> list = (List<Object>) reader.readJsonValue();
+
+      for (Object element : list) {
+        try {
+          result.add(elementAdapter.fromJsonValue(element));
+        } catch (Exception e) {
+          reader.getDataMappingMismatchLog().addRemovedListElement(
+            new DataMappingMismatchLog.RemovedListElement(reader.getPath(), e));
+        }
+      }
+    } else {
+      reader.beginArray();
+      while (reader.hasNext()) {
+        result.add(elementAdapter.fromJson(reader));
+      }
+      reader.endArray();
     }
-    reader.endArray();
     return result;
   }
 

@@ -29,6 +29,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import okio.Buffer;
 import okio.ByteString;
 import org.junit.Test;
 
@@ -394,6 +396,30 @@ public final class AdapterMethodsTest {
     JsonAdapter<Point> pointAdapter = moshi.adapter(Point.class);
     assertThat(pointAdapter.fromJson("{\"x\":null,\"y\":3}")).isEqualTo(new Point(-1, 3));
     assertThat(pointAdapter.toJson(new Point(-1, 3))).isEqualTo("{\"y\":3}");
+  }
+
+  @Test public void demonstrateMoshiSafeList() throws Exception {
+    Moshi moshi = new Moshi.Builder()
+        .add(new NullableIntToJsonAdapter())
+        .build();
+    JsonAdapter<MoshiSafeList<Point>> pointAdapter = moshi.adapter(Types
+            .newParameterizedType(MoshiSafeList.class, Point.class));
+
+    JsonReader reader = JsonReader.of(new Buffer().writeUtf8(
+      "[{\"x\":null,\"y\":3}, {\"x\":\"abc\"}]"));
+    MoshiSafeList<Point> results = pointAdapter.fromJson(reader);
+    assertThat(results.size()).isEqualTo(1);
+    assertThat(results.get(0)).isEqualTo(new Point(-1, 3));
+
+    List<DataMappingMismatchLog.RemovedListElement> removedListElements =
+      reader.getDataMappingMismatchLog().getRemovedListElements();
+
+    assertThat(removedListElements.size()).isEqualTo(1);
+    DataMappingMismatchLog.RemovedListElement removedElement = removedListElements.get(0);
+    assertThat(removedElement.exception.getMessage()).isEqualTo(
+      "com.squareup.moshi.JsonDataException: Expected NUMBER but was abc, " +
+      "a java.lang.String, at path $.x at $.x");
+    assertThat(removedElement.path).isEqualTo("$");
   }
 
   static class NullableIntToJsonAdapter {
