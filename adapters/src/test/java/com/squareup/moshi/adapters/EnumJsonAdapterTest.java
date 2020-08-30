@@ -20,9 +20,16 @@ import static org.junit.Assert.fail;
 
 import com.squareup.moshi.Json;
 import com.squareup.moshi.JsonDataException;
+import com.squareup.moshi.JsonEventListener;
 import com.squareup.moshi.JsonReader;
+import com.squareup.moshi.adapters.EnumJsonAdapter.UnknownEnumValueEvent;
 import okio.Buffer;
 import org.junit.Test;
+
+import javax.annotation.Nonnull;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 @SuppressWarnings("CheckReturnValue")
 public final class EnumJsonAdapterTest {
@@ -62,6 +69,21 @@ public final class EnumJsonAdapterTest {
     assertThat(reader.peek()).isEqualTo(JsonReader.Token.END_DOCUMENT);
   }
 
+  @Test public void withFallbackValueAndEventListenerRegistered() throws Exception {
+    EnumJsonAdapter<Roshambo> adapter = EnumJsonAdapter.create(Roshambo.class)
+        .withUnknownFallback(Roshambo.ROCK);
+    DataMappingFailureEventListener eventListener = new DataMappingFailureEventListener();
+    JsonReader reader = JsonReader.of(
+            new Buffer().writeUtf8("\"SPOCK\""), Collections.<JsonEventListener>singletonList(eventListener));
+    assertThat(adapter.fromJson(reader)).isEqualTo(Roshambo.ROCK);
+    assertThat(reader.peek()).isEqualTo(JsonReader.Token.END_DOCUMENT);
+
+    assertThat(eventListener.unknownEnumValueEventList.size()).isEqualTo(1);
+    UnknownEnumValueEvent unknownEnumValueEvent = eventListener.unknownEnumValueEventList.get(0);
+    assertThat(unknownEnumValueEvent.getUnknownValue()).isEqualTo("SPOCK");
+    assertThat(unknownEnumValueEvent.getPath()).isEqualTo("$");
+  }
+
   @Test
   public void withNullFallbackValue() throws Exception {
     EnumJsonAdapter<Roshambo> adapter =
@@ -76,5 +98,29 @@ public final class EnumJsonAdapterTest {
     PAPER,
     @Json(name = "scr")
     SCISSORS
+  }
+
+  private static final class DataMappingFailureEventListener implements JsonEventListener {
+    final List<UnknownEnumValueEvent> unknownEnumValueEventList;
+
+    private DataMappingFailureEventListener() {
+      unknownEnumValueEventList = new ArrayList<>();
+    }
+
+    @Override
+    public void onReadEvent(@Nonnull JsonReadEvent event) {
+      if (event instanceof UnknownEnumValueEvent) {
+        unknownEnumValueEventList.add((UnknownEnumValueEvent) event);
+      }
+    }
+
+    @Override
+    public void onWriteEvent(@Nonnull JsonWriteEvent event) {
+    }
+
+    @Override
+    public JsonEventListener copy() {
+      return null;
+    }
   }
 }
